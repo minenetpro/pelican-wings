@@ -540,6 +540,34 @@ Get server installation logs.
 
 ---
 
+#### GET /api/servers/:server/install-status
+
+Get installation status and install log metadata for a server.
+
+**Authentication:** Required
+
+**Response:**
+
+```json
+{
+  "is_installing": false,
+  "is_transferring": false,
+  "is_restoring": false,
+  "server_state": "offline",
+  "install_log": {
+    "exists": true,
+    "size_bytes": 12345,
+    "updated_at": "2026-02-16T19:14:22Z"
+  }
+}
+```
+
+**Notes:**
+
+- If no install log file exists yet, returns `200` with `install_log.exists = false`.
+
+---
+
 #### POST /api/servers/:server/power
 
 Control server power state.
@@ -2255,6 +2283,7 @@ Key dependencies:
 | GET    | /api/servers/:server/console                | Console history   |
 | GET    | /api/servers/:server/logs                   | Console logs      |
 | GET    | /api/servers/:server/install-logs           | Install logs      |
+| GET    | /api/servers/:server/install-status         | Install status    |
 | POST   | /api/servers/:server/power                  | Power action      |
 | POST   | /api/servers/:server/commands               | Send command      |
 | POST   | /api/servers/:server/install                | Install           |

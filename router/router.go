@@ -2,12 +2,12 @@ package router
 
 import (
 	"emperror.dev/errors"
-	"github.com/apex/log"
-	"github.com/gin-gonic/gin"
 	"github.com/Minenetpro/pelican-wings/config"
 	"github.com/Minenetpro/pelican-wings/remote"
 	"github.com/Minenetpro/pelican-wings/router/middleware"
 	wserver "github.com/Minenetpro/pelican-wings/server"
+	"github.com/apex/log"
+	"github.com/gin-gonic/gin"
 )
 
 // Configure configures the routing infrastructure for this daemon instance.
@@ -89,6 +89,7 @@ func Configure(m *wserver.Manager, client remote.Client) *gin.Engine {
 			serverExisting.GET("/logs", getServerLogs)
 			serverExisting.GET("/console", getServerConsole)
 			serverExisting.GET("/install-logs", getServerInstallLogs)
+			serverExisting.GET("/install-status", getServerInstallStatus)
 			serverExisting.POST("/power", postServerPower)
 			serverExisting.POST("/commands", postServerCommands)
 			serverExisting.POST("/install", postServerInstall)

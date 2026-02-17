@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Minenetpro/pelican-wings/config"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/apex/log"
 	"github.com/gin-gonic/gin"
 
+	"github.com/Minenetpro/pelican-wings/environment"
 	"github.com/Minenetpro/pelican-wings/router/downloader"
 	"github.com/Minenetpro/pelican-wings/router/middleware"
 	"github.com/Minenetpro/pelican-wings/router/tokens"
@@ -73,6 +75,61 @@ func getServerInstallLogs(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"data": output})
+}
+
+type installStatusLogResponse struct {
+	Exists    bool       `json:"exists"`
+	SizeBytes int64      `json:"size_bytes"`
+	UpdatedAt *time.Time `json:"updated_at"`
+}
+
+type installStatusResponse struct {
+	IsInstalling   bool                     `json:"is_installing"`
+	IsTransferring bool                     `json:"is_transferring"`
+	IsRestoring    bool                     `json:"is_restoring"`
+	ServerState    string                   `json:"server_state"`
+	InstallLog     installStatusLogResponse `json:"install_log"`
+}
+
+// getServerInstallStatus returns installation process state and install log metadata.
+func getServerInstallStatus(c *gin.Context) {
+	s := middleware.ExtractServer(c)
+
+	state := environment.ProcessOfflineState
+	if s.Environment != nil {
+		state = s.Environment.State()
+	}
+
+	response := installStatusResponse{
+		IsInstalling:   s.IsInstalling(),
+		IsTransferring: s.IsTransferring(),
+		IsRestoring:    s.IsRestoring(),
+		ServerState:    state,
+		InstallLog: installStatusLogResponse{
+			Exists:    false,
+			SizeBytes: 0,
+			UpdatedAt: nil,
+		},
+	}
+
+	filename := filepath.Join(config.Get().System.LogDirectory, "install", s.ID()+".log")
+	stat, err := os.Stat(filename)
+	if err != nil {
+		if os.IsNotExist(err) {
+			c.JSON(http.StatusOK, response)
+			return
+		}
+
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to read metadata for the installation log."})
+		return
+	}
+
+	modifiedAt := stat.ModTime().UTC()
+	response.InstallLog.Exists = true
+	response.InstallLog.SizeBytes = stat.Size()
+	response.InstallLog.UpdatedAt = &modifiedAt
+
+	c.JSON(http.StatusOK, response)
 }
 
 // Handles a request to control the power state of a server. If the action being passed
