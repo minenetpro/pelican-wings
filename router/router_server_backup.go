@@ -15,6 +15,34 @@ import (
 	"github.com/Minenetpro/pelican-wings/server/backup"
 )
 
+type resticQueryBody struct {
+	IncludeStats bool                        `json:"include_stats"`
+	ResticConfig *backup.ResticRuntimeConfig `json:"restic_config"`
+}
+
+func validateResticRequestConfig(resticConfig *backup.ResticRuntimeConfig) error {
+	if resticConfig == nil {
+		return errors.New("router/backups: restic_config is required for restic backup operations")
+	}
+
+	if strings.TrimSpace(resticConfig.Repository) == "" {
+		return errors.New("router/backups: restic_config.repository is required for restic backup operations")
+	}
+
+	if strings.TrimSpace(resticConfig.Password) == "" {
+		return errors.New("router/backups: restic_config.password is required for restic backup operations")
+	}
+
+	return nil
+}
+
+func abortLegacyResticGet(c *gin.Context) {
+	c.Header("Allow", http.MethodPost)
+	c.AbortWithStatusJSON(http.StatusMethodNotAllowed, gin.H{
+		"error": "Restic snapshot lookup requires POST with restic_config.",
+	})
+}
+
 // postServerBackup performs a backup against a given server instance using the
 // provided backup adapter.
 func postServerBackup(c *gin.Context) {
@@ -22,9 +50,10 @@ func postServerBackup(c *gin.Context) {
 	client := middleware.ExtractApiClient(c)
 	logger := middleware.ExtractLogger(c)
 	var data struct {
-		Adapter backup.AdapterType `json:"adapter"`
-		Uuid    string             `json:"uuid"`
-		Ignore  string             `json:"ignore"`
+		Adapter      backup.AdapterType          `json:"adapter"`
+		Uuid         string                      `json:"uuid"`
+		Ignore       string                      `json:"ignore"`
+		ResticConfig *backup.ResticRuntimeConfig `json:"restic_config"`
 	}
 	if err := c.BindJSON(&data); err != nil {
 		return
@@ -41,7 +70,11 @@ func postServerBackup(c *gin.Context) {
 			middleware.CaptureAndAbort(c, errors.New("router/backups: restic backup adapter is not enabled"))
 			return
 		}
-		adapter = backup.NewRestic(client, data.Uuid, s.ID(), data.Ignore)
+		if err := validateResticRequestConfig(data.ResticConfig); err != nil {
+			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		adapter = backup.NewRestic(client, data.Uuid, s.ID(), data.Ignore, data.ResticConfig)
 	default:
 		middleware.CaptureAndAbort(c, errors.New("router/backups: provided adapter is not valid: "+string(data.Adapter)))
 		return
@@ -78,8 +111,9 @@ func postServerRestoreBackup(c *gin.Context) {
 	logger := middleware.ExtractLogger(c)
 
 	var data struct {
-		Adapter           backup.AdapterType `binding:"required,oneof=wings s3 restic" json:"adapter"`
-		TruncateDirectory bool               `json:"truncate_directory"`
+		Adapter           backup.AdapterType          `binding:"required,oneof=wings s3 restic" json:"adapter"`
+		TruncateDirectory bool                        `json:"truncate_directory"`
+		ResticConfig      *backup.ResticRuntimeConfig `json:"restic_config"`
 		// A UUID is always required for this endpoint, however the download URL
 		// is only present when the given adapter type is s3.
 		DownloadUrl string `json:"download_url"`
@@ -94,6 +128,12 @@ func postServerRestoreBackup(c *gin.Context) {
 	if data.Adapter == backup.ResticBackupAdapter && !config.Get().System.Backups.Restic.Enabled {
 		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "The restic backup adapter is not enabled on this node."})
 		return
+	}
+	if data.Adapter == backup.ResticBackupAdapter {
+		if err := validateResticRequestConfig(data.ResticConfig); err != nil {
+			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 	}
 
 	s.SetRestoring(true)
@@ -141,7 +181,7 @@ func postServerRestoreBackup(c *gin.Context) {
 	// Handle restic backup restoration - the backup is stored in the restic repository,
 	// no download URL is needed as restic pulls directly from the S3 repo.
 	if data.Adapter == backup.ResticBackupAdapter {
-		b := backup.NewRestic(client, c.Param("backup"), s.ID(), "")
+		b := backup.NewRestic(client, c.Param("backup"), s.ID(), "", data.ResticConfig)
 		b.WithLogContext(map[string]interface{}{
 			"server":     s.ID(),
 			"request_id": c.GetString("request_id"),
@@ -219,8 +259,22 @@ func getServerBackupSnapshots(c *gin.Context) {
 
 	// Check if client wants size information (default: false for performance)
 	includeStats := c.Query("include_stats") == "true"
+	var data resticQueryBody
+	if c.Request.Method == http.MethodGet {
+		abortLegacyResticGet(c)
+		return
+	}
+	if err := c.ShouldBindJSON(&data); err != nil {
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := validateResticRequestConfig(data.ResticConfig); err != nil {
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	includeStats = data.IncludeStats
 
-	b := backup.NewRestic(client, "", serverID, "")
+	b := backup.NewRestic(client, "", serverID, "", data.ResticConfig)
 	b.WithLogContext(map[string]interface{}{
 		"server":     serverID,
 		"request_id": c.GetString("request_id"),
@@ -249,13 +303,29 @@ func getServerBackupStatus(c *gin.Context) {
 		return
 	}
 
-	b := backup.NewRestic(client, c.Param("backup"), serverID, "")
+	includeStats := c.Query("include_stats") == "true"
+	var data resticQueryBody
+	if c.Request.Method == http.MethodGet {
+		abortLegacyResticGet(c)
+		return
+	}
+	if err := c.ShouldBindJSON(&data); err != nil {
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := validateResticRequestConfig(data.ResticConfig); err != nil {
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	includeStats = data.IncludeStats
+
+	b := backup.NewRestic(client, c.Param("backup"), serverID, "", data.ResticConfig)
 	b.WithLogContext(map[string]interface{}{
 		"server":     serverID,
 		"request_id": c.GetString("request_id"),
 	})
 
-	snapshot, err := b.GetSnapshotStatus(c.Request.Context())
+	snapshot, err := b.GetSnapshotStatus(c.Request.Context(), includeStats)
 	if err != nil {
 		middleware.CaptureAndAbort(c, err)
 		return
@@ -278,7 +348,8 @@ func deleteServerBackup(c *gin.Context) {
 	// Parse optional request body to determine adapter type
 	// Default to local (wings) adapter for backward compatibility
 	var data struct {
-		Adapter backup.AdapterType `json:"adapter"`
+		Adapter      backup.AdapterType          `json:"adapter"`
+		ResticConfig *backup.ResticRuntimeConfig `json:"restic_config"`
 	}
 	// Attempt to parse the body, but don't fail if empty (backward compatibility)
 	_ = c.ShouldBindJSON(&data)
@@ -296,7 +367,11 @@ func deleteServerBackup(c *gin.Context) {
 			})
 			return
 		}
-		b := backup.NewRestic(client, c.Param("backup"), serverID, "")
+		if err := validateResticRequestConfig(data.ResticConfig); err != nil {
+			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		b := backup.NewRestic(client, c.Param("backup"), serverID, "", data.ResticConfig)
 		b.WithLogContext(map[string]interface{}{
 			"server":     serverID,
 			"request_id": c.GetString("request_id"),

@@ -3,6 +3,8 @@ package backup
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -21,12 +23,23 @@ import (
 
 type ResticBackup struct {
 	Backup
+	resticConfig *ResticRuntimeConfig
 }
 
 var _ BackupInterface = (*ResticBackup)(nil)
 
-// repoInitMu protects repository initialization to prevent concurrent init attempts.
-var repoInitMu sync.Mutex
+// repoInitMu protects repository initialization per repository key.
+var repoInitMu sync.Map
+
+type ResticRuntimeConfig struct {
+	RepositoryKey      string `json:"repository_key"`
+	Repository         string `json:"repository"`
+	Password           string `json:"password"`
+	AWSAccessKeyID     string `json:"aws_access_key_id"`
+	AWSSecretAccessKey string `json:"aws_secret_access_key"`
+	AWSSessionToken    string `json:"aws_session_token"`
+	AWSRegion          string `json:"aws_region"`
+}
 
 // resticSnapshot represents a snapshot from restic snapshots output.
 type resticSnapshot struct {
@@ -44,15 +57,16 @@ type resticStats struct {
 	TotalFileCount int64 `json:"total_file_count"`
 }
 
-func NewRestic(client remote.Client, uuid string, suuid string, ignore string) *ResticBackup {
+func NewRestic(client remote.Client, uuid string, suuid string, ignore string, resticConfig *ResticRuntimeConfig) *ResticBackup {
 	return &ResticBackup{
-		Backup{
+		Backup: Backup{
 			client:     client,
 			Uuid:       uuid,
 			ServerUuid: suuid,
 			Ignore:     ignore,
 			adapter:    ResticBackupAdapter,
 		},
+		resticConfig: resticConfig,
 	}
 }
 
@@ -69,7 +83,6 @@ func (r *ResticBackup) SkipPanelNotification() bool {
 // Remove removes a backup snapshot from the restic repository.
 func (r *ResticBackup) Remove() error {
 	ctx := context.Background()
-	cfg := config.Get().System.Backups.Restic
 
 	r.log().Info("removing backup snapshot from restic repository")
 
@@ -88,8 +101,8 @@ func (r *ResticBackup) Remove() error {
 	args := []string{"forget", snapshot.ID, "--prune"}
 
 	// Add cache directory if configured
-	if cfg.CacheDir != "" {
-		args = append(args, "--cache-dir", cfg.CacheDir)
+	if cacheDir := r.cacheDir(); cacheDir != "" {
+		args = append(args, "--cache-dir", cacheDir)
 	}
 
 	// Use forget with specific snapshot ID to remove only this snapshot
@@ -105,8 +118,6 @@ func (r *ResticBackup) Remove() error {
 
 // Generate creates a backup of the server's files using restic.
 func (r *ResticBackup) Generate(ctx context.Context, _ *filesystem.Filesystem, ignore string) (*ArchiveDetails, error) {
-	cfg := config.Get().System.Backups.Restic
-
 	// Build the source path for this server's data
 	sourcePath := filepath.Join(config.Get().System.Data, r.ServerUuid)
 
@@ -136,8 +147,8 @@ func (r *ResticBackup) Generate(ctx context.Context, _ *filesystem.Filesystem, i
 	}
 
 	// Add cache directory if configured
-	if cfg.CacheDir != "" {
-		args = append(args, "--cache-dir", cfg.CacheDir)
+	if cacheDir := r.cacheDir(); cacheDir != "" {
+		args = append(args, "--cache-dir", cacheDir)
 	}
 
 	// Add the source path
@@ -164,8 +175,6 @@ func (r *ResticBackup) Generate(ctx context.Context, _ *filesystem.Filesystem, i
 // This supports cross-server restore by using the snapshotID:path syntax to restore
 // files from the original server's path directly into the target server's directory.
 func (r *ResticBackup) Restore(ctx context.Context, _ io.Reader, callback RestoreCallback) error {
-	cfg := config.Get().System.Backups.Restic
-
 	// Find the snapshot for this backup_uuid
 	snapshot, err := r.findSnapshotByTag(ctx)
 	if err != nil {
@@ -201,8 +210,8 @@ func (r *ResticBackup) Restore(ctx context.Context, _ io.Reader, callback Restor
 		"--target", targetPath,
 	}
 
-	if cfg.CacheDir != "" {
-		args = append(args, "--cache-dir", cfg.CacheDir)
+	if cacheDir := r.cacheDir(); cacheDir != "" {
+		args = append(args, "--cache-dir", cacheDir)
 	}
 
 	output, err := r.runRestic(ctx, args...)
@@ -251,9 +260,54 @@ func (r *ResticBackup) serverTag() string {
 	return fmt.Sprintf("server_uuid:%s", r.ServerUuid)
 }
 
+func (r *ResticBackup) effectiveResticConfig() ResticRuntimeConfig {
+	if r.resticConfig == nil {
+		return ResticRuntimeConfig{}
+	}
+
+	return *r.resticConfig
+}
+
+func (r *ResticBackup) validateResticConfig() error {
+	cfg := r.effectiveResticConfig()
+	if cfg.Repository == "" {
+		return errors.New("backup: restic repository is not configured")
+	}
+	if cfg.Password == "" {
+		return errors.New("backup: restic password is not configured")
+	}
+	return nil
+}
+
+func (r *ResticBackup) repositoryKey() string {
+	cfg := r.effectiveResticConfig()
+	key := cfg.RepositoryKey
+	if key == "" {
+		key = cfg.Repository
+	}
+	if key == "" {
+		return "default"
+	}
+	sum := sha256.Sum256([]byte(key))
+	return hex.EncodeToString(sum[:])
+}
+
+func (r *ResticBackup) cacheDir() string {
+	base := config.Get().System.Backups.Restic.CacheDir
+	if base == "" {
+		return ""
+	}
+	return filepath.Join(base, r.repositoryKey())
+}
+
+func (r *ResticBackup) initLock() *sync.Mutex {
+	lock, _ := repoInitMu.LoadOrStore(r.repositoryKey(), &sync.Mutex{})
+	return lock.(*sync.Mutex)
+}
+
 // buildEnv builds the environment variables for restic commands.
 func (r *ResticBackup) buildEnv() []string {
-	cfg := config.Get().System.Backups.Restic
+	cfg := r.effectiveResticConfig()
 
 	env := os.Environ()
 	env = append(env,
@@ -267,8 +321,12 @@ func (r *ResticBackup) buildEnv() []string {
 	if cfg.AWSSecretAccessKey != "" {
 		env = append(env, fmt.Sprintf("AWS_SECRET_ACCESS_KEY=%s", cfg.AWSSecretAccessKey))
 	}
+	if cfg.AWSSessionToken != "" {
+		env = append(env, fmt.Sprintf("AWS_SESSION_TOKEN=%s", cfg.AWSSessionToken))
+	}
 	if cfg.AWSRegion != "" {
 		env = append(env, fmt.Sprintf("AWS_DEFAULT_REGION=%s", cfg.AWSRegion))
+		env = append(env, fmt.Sprintf("AWS_REGION=%s", cfg.AWSRegion))
 	}
 
 	return env
@@ -276,6 +334,10 @@ func (r *ResticBackup) buildEnv() []string {
 
 // runRestic executes a restic command with the appropriate environment.
 func (r *ResticBackup) runRestic(ctx context.Context, args ...string) ([]byte, error) {
+	if err := r.validateResticConfig(); err != nil {
+		return nil, err
+	}
+
 	cfg := config.Get().System.Backups.Restic
 
 	cmd := exec.CommandContext(ctx, cfg.BinaryPath, args...)
@@ -297,16 +359,15 @@ func (r *ResticBackup) runRestic(ctx context.Context, args ...string) ([]byte, e
 
 // ensureRepository checks if the repository exists and initializes it if needed.
 func (r *ResticBackup) ensureRepository(ctx context.Context) error {
-	cfg := config.Get().System.Backups.Restic
-
 	// Use mutex to prevent concurrent initialization attempts
-	repoInitMu.Lock()
-	defer repoInitMu.Unlock()
+	lock := r.initLock()
+	lock.Lock()
+	defer lock.Unlock()
 
 	// Try to list snapshots to check if repo exists
 	args := []string{"snapshots", "--json"}
-	if cfg.CacheDir != "" {
-		args = append(args, "--cache-dir", cfg.CacheDir)
+	if cacheDir := r.cacheDir(); cacheDir != "" {
+		args = append(args, "--cache-dir", cacheDir)
 	}
 
 	_, err := r.runRestic(ctx, args...)
@@ -328,8 +389,8 @@ func (r *ResticBackup) ensureRepository(ctx context.Context) error {
 
 	// Initialize the repository
 	initArgs := []string{"init"}
-	if cfg.CacheDir != "" {
-		initArgs = append(initArgs, "--cache-dir", cfg.CacheDir)
+	if cacheDir := r.cacheDir(); cacheDir != "" {
+		initArgs = append(initArgs, "--cache-dir", cacheDir)
 	}
 
 	_, err = r.runRestic(ctx, initArgs...)
@@ -374,11 +435,9 @@ func parseSnapshotToInfo(snapshot resticSnapshot) SnapshotInfo {
 
 // GetSnapshotStats retrieves size statistics for a specific snapshot.
 func (r *ResticBackup) GetSnapshotStats(ctx context.Context, snapshotID string) (*resticStats, error) {
-	cfg := config.Get().System.Backups.Restic
-
 	args := []string{"stats", "--json", snapshotID}
-	if cfg.CacheDir != "" {
-		args = append(args, "--cache-dir", cfg.CacheDir)
+	if cacheDir := r.cacheDir(); cacheDir != "" {
+		args = append(args, "--cache-dir", cacheDir)
 	}
 
 	output, err := r.runRestic(ctx, args...)
@@ -409,11 +468,9 @@ func (r *ResticBackup) EnrichSnapshotWithStats(ctx context.Context, info *Snapsh
 // If includeStats is true, it will also fetch size information for each snapshot
 // (this is slower as it requires an additional restic command per snapshot).
 func (r *ResticBackup) ListSnapshots(ctx context.Context, includeStats bool) ([]SnapshotInfo, error) {
-	cfg := config.Get().System.Backups.Restic
-
 	args := []string{"snapshots", "--json", "--tag", r.serverTag()}
-	if cfg.CacheDir != "" {
-		args = append(args, "--cache-dir", cfg.CacheDir)
+	if cacheDir := r.cacheDir(); cacheDir != "" {
+		args = append(args, "--cache-dir", cacheDir)
 	}
 
 	output, err := r.runRestic(ctx, args...)
@@ -439,12 +496,10 @@ func (r *ResticBackup) ListSnapshots(ctx context.Context, includeStats bool) ([]
 }
 
 // GetSnapshotStatus checks if a snapshot exists for this backup and returns its info.
-func (r *ResticBackup) GetSnapshotStatus(ctx context.Context) (*SnapshotInfo, error) {
-	cfg := config.Get().System.Backups.Restic
-
+func (r *ResticBackup) GetSnapshotStatus(ctx context.Context, includeStats bool) (*SnapshotInfo, error) {
 	args := []string{"snapshots", "--json", "--tag", r.backupTag()}
-	if cfg.CacheDir != "" {
-		args = append(args, "--cache-dir", cfg.CacheDir)
+	if cacheDir := r.cacheDir(); cacheDir != "" {
+		args = append(args, "--cache-dir", cacheDir)
 	}
 
 	output, err := r.runRestic(ctx, args...)
@@ -462,17 +517,17 @@ func (r *ResticBackup) GetSnapshotStatus(ctx context.Context) (*SnapshotInfo, er
 	}
 
 	info := parseSnapshotToInfo(snapshots[0])
-	r.EnrichSnapshotWithStats(ctx, &info)
+	if includeStats {
+		r.EnrichSnapshotWithStats(ctx, &info)
+	}
 	return &info, nil
 }
 
 // findSnapshotByTag finds a snapshot by its backup_uuid tag and returns full info.
 func (r *ResticBackup) findSnapshotByTag(ctx context.Context) (*SnapshotInfo, error) {
-	cfg := config.Get().System.Backups.Restic
-
 	args := []string{"snapshots", "--json", "--tag", r.backupTag()}
-	if cfg.CacheDir != "" {
-		args = append(args, "--cache-dir", cfg.CacheDir)
+	if cacheDir := r.cacheDir(); cacheDir != "" {
+		args = append(args, "--cache-dir", cacheDir)
 	}
 
 	output, err := r.runRestic(ctx, args...)

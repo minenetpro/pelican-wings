@@ -292,26 +292,11 @@ type Backups struct {
 	Restic ResticConfig `yaml:"restic"`
 }
 
-// ResticConfig defines configuration for the restic backup adapter which stores
-// snapshots in an S3-compatible repository.
+// ResticConfig defines node-local capability settings for the restic backup adapter.
+// Repository credentials are provided per request by the control plane.
 type ResticConfig struct {
 	// Enabled determines whether the restic backup adapter is available.
 	Enabled bool `default:"false" yaml:"enabled"`
-
-	// Repository is the restic repository URL (e.g., s3:s3.amazonaws.com/bucket)
-	Repository string `yaml:"repository"`
-
-	// Password is the restic repository password (RESTIC_PASSWORD)
-	Password string `yaml:"password"`
-
-	// AWSAccessKeyID for S3 authentication
-	AWSAccessKeyID string `yaml:"aws_access_key_id"`
-
-	// AWSSecretAccessKey for S3 authentication
-	AWSSecretAccessKey string `yaml:"aws_secret_access_key"`
-
-	// AWSRegion for the S3 bucket
-	AWSRegion string `yaml:"aws_region"`
 
 	// BinaryPath is the path to the restic binary
 	BinaryPath string `default:"restic" yaml:"binary_path"`

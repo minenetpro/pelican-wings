@@ -24,25 +24,17 @@ system:
     compression_level: "best_speed"
     restic:
       enabled: true
-      repository: "s3:s3.us-east-1.amazonaws.com/my-backup-bucket"
-      password: "secure-restic-repository-password"
-      aws_access_key_id: "AKIAIOSFODNN7EXAMPLE"
-      aws_secret_access_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
-      aws_region: "us-east-1"
       binary_path: "/usr/bin/restic"
       cache_dir: "/var/cache/pelican/restic"
 ```
+
+Repository selection and credentials are request-scoped. The control plane must send a `restic_config` payload with each restic operation.
 
 ### Configuration Options
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `enabled` | bool | `false` | Enable the restic backup adapter |
-| `repository` | string | - | Restic repository URL (e.g., `s3:s3.amazonaws.com/bucket`) |
-| `password` | string | - | Repository encryption password |
-| `aws_access_key_id` | string | - | AWS access key for S3 authentication |
-| `aws_secret_access_key` | string | - | AWS secret key for S3 authentication |
-| `aws_region` | string | - | AWS region for the S3 bucket |
 | `binary_path` | string | `restic` | Path to the restic binary |
 | `cache_dir` | string | `/var/cache/pelican/restic` | Directory for restic cache files |
 
@@ -99,7 +91,16 @@ Content-Type: application/json
 {
     "adapter": "restic",
     "uuid": "backup-uuid-from-external-service",
-    "ignore": ""
+    "ignore": "",
+    "restic_config": {
+        "repository_key": "team-storage-config-id",
+        "repository": "s3:https://ACCOUNT.r2.cloudflarestorage.com/team-bucket",
+        "password": "restic-password",
+        "aws_access_key_id": "temporary-access-key",
+        "aws_secret_access_key": "temporary-secret",
+        "aws_session_token": "temporary-session-token",
+        "aws_region": "auto"
+    }
 }
 ```
 
@@ -120,7 +121,16 @@ Content-Type: application/json
 
 {
     "adapter": "restic",
-    "truncate_directory": true
+    "truncate_directory": true,
+    "restic_config": {
+        "repository_key": "team-storage-config-id",
+        "repository": "s3:https://ACCOUNT.r2.cloudflarestorage.com/team-bucket",
+        "password": "restic-password",
+        "aws_access_key_id": "temporary-access-key",
+        "aws_secret_access_key": "temporary-secret",
+        "aws_session_token": "temporary-session-token",
+        "aws_region": "auto"
+    }
 }
 ```
 
@@ -147,7 +157,16 @@ Authorization: Bearer {token}
 Content-Type: application/json
 
 {
-    "adapter": "restic"
+    "adapter": "restic",
+    "restic_config": {
+        "repository_key": "team-storage-config-id",
+        "repository": "s3:https://ACCOUNT.r2.cloudflarestorage.com/team-bucket",
+        "password": "restic-password",
+        "aws_access_key_id": "temporary-access-key",
+        "aws_secret_access_key": "temporary-secret",
+        "aws_session_token": "temporary-session-token",
+        "aws_region": "auto"
+    }
 }
 ```
 
@@ -161,13 +180,30 @@ Lists all restic snapshots for a server. The server UUID is used only as a tag
 filter and does not need to exist on the node.
 
 ```http
-GET /api/servers/{server}/backup/snapshots
+POST /api/servers/{server}/backup/snapshots
 Authorization: Bearer {token}
+Content-Type: application/json
 ```
 
-| Query Parameter | Type | Default | Description |
-|-----------------|------|---------|-------------|
+```json
+{
+    "include_stats": false,
+    "restic_config": {
+        "repository_key": "team-storage-config-id",
+        "repository": "s3:https://ACCOUNT.r2.cloudflarestorage.com/team-bucket",
+        "password": "restic-password",
+        "aws_access_key_id": "temporary-access-key",
+        "aws_secret_access_key": "temporary-secret",
+        "aws_session_token": "temporary-session-token",
+        "aws_region": "auto"
+    }
+}
+```
+
+| Body Field | Type | Default | Description |
+|------------|------|---------|-------------|
 | `include_stats` | bool | `false` | Include size and file count (slower, requires additional restic command per snapshot) |
+| `restic_config` | object | - | Request-scoped repository configuration |
 
 **Response:** `200 OK`
 
@@ -186,7 +222,7 @@ Authorization: Bearer {token}
 }
 ```
 
-**Response with `?include_stats=true`:** `200 OK`
+**Response with `include_stats=true`:** `200 OK`
 
 ```json
 {
@@ -207,12 +243,28 @@ Authorization: Bearer {token}
 
 ### Get Snapshot Status
 
-Checks if a specific backup snapshot exists in the restic repository. Always includes size information. The
+Checks if a specific backup snapshot exists in the restic repository. The
 server UUID in the URL is not validated for restic snapshots; the backup UUID tag identifies the snapshot.
 
 ```http
-GET /api/servers/{server}/backup/{backup}/status
+POST /api/servers/{server}/backup/{backup}/status
 Authorization: Bearer {token}
+Content-Type: application/json
+```
+
+```json
+{
+    "include_stats": false,
+    "restic_config": {
+        "repository_key": "team-storage-config-id",
+        "repository": "s3:https://ACCOUNT.r2.cloudflarestorage.com/team-bucket",
+        "password": "restic-password",
+        "aws_access_key_id": "temporary-access-key",
+        "aws_secret_access_key": "temporary-secret",
+        "aws_session_token": "temporary-session-token",
+        "aws_region": "auto"
+    }
+}
 ```
 
 **Response (snapshot exists):** `200 OK`
@@ -342,7 +394,7 @@ On the first backup, Wings automatically initializes the restic repository if it
 
 1. Wings attempts to list snapshots to check if the repo exists
 2. If the repo doesn't exist, Wings runs `restic init`
-3. This is a one-time operation protected by a mutex to prevent concurrent init attempts
+3. This is a one-time operation protected by a per-repository mutex to prevent concurrent init attempts
 
 ## Environment Variables
 
@@ -350,11 +402,12 @@ The following environment variables are set when executing restic commands:
 
 | Variable | Source |
 |----------|--------|
-| `RESTIC_REPOSITORY` | `config.restic.repository` |
-| `RESTIC_PASSWORD` | `config.restic.password` |
-| `AWS_ACCESS_KEY_ID` | `config.restic.aws_access_key_id` |
-| `AWS_SECRET_ACCESS_KEY` | `config.restic.aws_secret_access_key` |
-| `AWS_DEFAULT_REGION` | `config.restic.aws_region` |
+| `RESTIC_REPOSITORY` | `request.restic_config.repository` |
+| `RESTIC_PASSWORD` | `request.restic_config.password` |
+| `AWS_ACCESS_KEY_ID` | `request.restic_config.aws_access_key_id` |
+| `AWS_SECRET_ACCESS_KEY` | `request.restic_config.aws_secret_access_key` |
+| `AWS_SESSION_TOKEN` | `request.restic_config.aws_session_token` |
+| `AWS_DEFAULT_REGION` | `request.restic_config.aws_region` |
 
 ## Differences from Traditional Backups
 
@@ -373,6 +426,7 @@ The following environment variables are set when executing restic commands:
 ### Common Issues
 
 **Repository not found errors:**
+- Verify the caller is sending `restic_config`
 - Verify S3 credentials are correct
 - Check bucket exists and is accessible
 - Ensure AWS region is set correctly
