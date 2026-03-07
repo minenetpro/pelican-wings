@@ -112,6 +112,16 @@ func (olm *OutputLineMatcher) String() string {
 	return string(olm.raw)
 }
 
+// MarshalJSON persists the matcher using its original raw string form so it can
+// be loaded back through UnmarshalJSON without losing startup markers.
+func (olm *OutputLineMatcher) MarshalJSON() ([]byte, error) {
+	if olm == nil {
+		return []byte("null"), nil
+	}
+
+	return json.Marshal(string(olm.raw))
+}
+
 // UnmarshalJSON unmarshals the startup lines into individual structs for easier
 // matching abilities.
 func (olm *OutputLineMatcher) UnmarshalJSON(data []byte) error {

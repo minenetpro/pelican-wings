@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.1.0 - 2026-03-07
+### Fixed
+* Local control-plane persistence now stores `process_configuration.startup.done` matchers as strings so `servers.json` can be reloaded cleanly after restart.
+
 ## v2.0.1 - 2026-03-07
 ### Fixed
 * Imported servers created with `skip_install` now restore their actual runtime state by checking whether the environment is already running and reattaching when possible.
