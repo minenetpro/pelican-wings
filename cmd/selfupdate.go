@@ -29,8 +29,8 @@ func newSelfupdateCommand() *cobra.Command {
 		Run:   selfupdateCmdRun,
 	}
 
-	command.Flags().StringVar(&updateArgs.repoOwner, "repo-owner", "pelican-dev", "GitHub repository owner")
-	command.Flags().StringVar(&updateArgs.repoName, "repo-name", "wings", "GitHub repository name")
+	command.Flags().StringVar(&updateArgs.repoOwner, "repo-owner", "minenetpro", "GitHub repository owner")
+	command.Flags().StringVar(&updateArgs.repoName, "repo-name", "pelican-wings", "GitHub repository name")
 	command.Flags().BoolVar(&updateArgs.force, "force", false, "Force update even if on latest version")
 
 	return command
