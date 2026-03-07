@@ -1,9 +1,12 @@
 package router
 
 import (
+	"context"
 	"net/http"
+	"time"
 
 	"emperror.dev/errors"
+	"github.com/Minenetpro/pelican-wings/environment"
 	"github.com/Minenetpro/pelican-wings/remote"
 	"github.com/Minenetpro/pelican-wings/router/middleware"
 	"github.com/Minenetpro/pelican-wings/server"
@@ -46,6 +49,27 @@ func definitionFromRequest(request serverControlRequest) (remote.LocalServerDefi
 		},
 		InstallationScript: request.InstallationScript,
 	}, nil
+}
+
+func restoreImportedServerState(s *server.Server) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
+	defer cancel()
+
+	running, err := s.Environment.IsRunning(ctx)
+	if err != nil {
+		s.Log().WithField("error", err).Warn("failed to inspect imported server state")
+		return
+	}
+
+	if !running {
+		s.Environment.SetState(environment.ProcessOfflineState)
+		return
+	}
+
+	s.Environment.SetState(environment.ProcessRunningState)
+	if err := s.Environment.Attach(ctx); err != nil {
+		s.Log().WithField("error", err).Warn("failed to attach to imported running server")
+	}
 }
 
 func putServer(c *gin.Context) {
@@ -144,6 +168,7 @@ func createLocalServer(c *gin.Context, manager *server.Manager, request serverCo
 		}
 
 		if skipInstall {
+			restoreImportedServerState(i.Server())
 			if i.StartOnCompletion {
 				if err := i.Server().HandlePowerAction(server.PowerActionStart, 30); err != nil {
 					i.Server().Log().WithField("error", err).Warn("failed to start imported server after create")
