@@ -36,6 +36,28 @@ type ReplaceValue struct {
 	valueType jsonparser.ValueType
 }
 
+// MarshalJSON preserves the original scalar value for configuration
+// replacements so round-tripping process configurations through JSON does not
+// erase replace_with values.
+func (cv ReplaceValue) MarshalJSON() ([]byte, error) {
+	switch cv.Type() {
+	case jsonparser.String:
+		return json.Marshal(cv.String())
+	case jsonparser.Null:
+		return []byte("null"), nil
+	case jsonparser.Boolean, jsonparser.Number:
+		if len(cv.value) == 0 {
+			return []byte("null"), nil
+		}
+		return append([]byte(nil), cv.value...), nil
+	default:
+		if len(cv.value) == 0 {
+			return []byte("null"), nil
+		}
+		return append([]byte(nil), cv.value...), nil
+	}
+}
+
 // Value returns the underlying value of the replacement. Be aware that this
 // can include escaped UTF-8 sequences that will need to be handled by the caller
 // in order to avoid accidentally injecting invalid sequences into the running

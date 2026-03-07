@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.1.1 - 2026-03-07
+### Fixed
+* Local control-plane persistence now preserves configuration `replace_with` values when process configurations are written to and reloaded from `servers.json`.
+
 ## v2.1.0 - 2026-03-07
 ### Fixed
 * Local control-plane persistence now stores `process_configuration.startup.done` matchers as strings so `servers.json` can be reloaded cleanly after restart.
