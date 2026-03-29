@@ -154,7 +154,7 @@ wings configure
 # Place config.yml in /etc/pelican/config.yml
 ```
 
-For secure shared-node deployments with untrusted tenants, do not use the containerized compose example. Install Wings directly on the host and follow the dedicated secure deployment guide:
+For secure shared-node deployments with untrusted tenants, install Wings directly on the host and follow the dedicated secure deployment guide:
 
 - [Secure Deployment Guide](SECURE_DEPLOYMENT.md)
 

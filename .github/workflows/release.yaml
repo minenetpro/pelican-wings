@@ -11,7 +11,6 @@ jobs:
     runs-on: blacksmith-4vcpu-ubuntu-2204
     permissions:
       contents: write
-      packages: write
 
     steps:
       - name: Code Checkout

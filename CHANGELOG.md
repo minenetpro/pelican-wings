@@ -1,5 +1,15 @@
 # Changelog
 
+## v3.0.0 - 2026-03-29
+### Breaking
+* Secure shared-node deployment is now the primary operating model for this fork: Wings runs directly on the host with a gVisor-backed `runsc` runtime, and the repo no longer ships Docker packaging for running Wings itself in a container.
+* Secure mode rejects tenant-controlled host mounts and `force_outgoing_ip`, and isolates workloads onto per-server bridge networks.
+
+### Changed
+* Documentation has been refactored around end-to-end secure host deployment, including gVisor installation, Docker runtime registration, and host-side Wings configuration.
+* Tenant images may now use either tags or digests; digest pinning is recommended for provenance, but not required for sandboxing.
+* Cached local images are now reused correctly during pull failures for both tag references and digest references.
+
 ## v2.1.1 - 2026-03-07
 ### Fixed
 * Local control-plane persistence now preserves configuration `replace_with` values when process configurations are written to and reloaded from `servers.json`.

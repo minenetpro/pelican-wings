@@ -10,8 +10,6 @@ The model is:
 - Wings launches tenant workloads and installer jobs with the `runsc` runtime.
 - Tenant workloads use per-server bridge networks and explicit published ports.
 
-This is intentionally different from the containerized `docker-compose.example.yml` deployment. That example is not suitable for secure multi-tenant use.
-
 ## Security Model
 
 This repository now enforces the following tenant workload restrictions:
@@ -33,12 +31,6 @@ Use this topology for secure shared-node deployments:
 - Docker Engine installed directly on the host
 - Wings binary installed directly on the host
 - systemd managing both Docker and Wings
-
-Do not use this topology for secure shared-node deployments:
-
-- Wings inside Docker with `/var/run/docker.sock` mounted
-- Shared tenant bridge networks
-- Host networking or `macvlan` for tenant workloads
 
 ## Prerequisites
 
@@ -268,7 +260,6 @@ system:
 Important deployment notes:
 
 - Keep `docker.runtime` set to `runsc`.
-- Do not run Wings inside Docker for this deployment model.
 - Do not rely on `allowed_mounts` for tenant workloads. Secure mode rejects custom server mounts.
 - Do not use `force_outgoing_ip`.
 - Digest pinning is recommended if you want reproducible image selection, but it is not required by Wings.
