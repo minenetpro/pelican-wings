@@ -25,9 +25,8 @@ func TestValidateSecureConfiguration(t *testing.T) {
 			config: secureTestConfig("ghcr.io/pelican-dev/example@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
 		},
 		{
-			name:    "rejects tag image",
-			config:  secureTestConfig("ghcr.io/pelican-dev/example:latest"),
-			wantErr: true,
+			name:   "accepts tag image",
+			config: secureTestConfig("ghcr.io/pelican-dev/example:latest"),
 		},
 		{
 			name: "rejects custom mounts",
@@ -62,17 +61,5 @@ func TestValidateSecureConfiguration(t *testing.T) {
 				t.Fatalf("unexpected validation error: %v", err)
 			}
 		})
-	}
-}
-
-func TestValidateSecureImageReference(t *testing.T) {
-	t.Parallel()
-
-	if err := validateSecureImageReference("ghcr.io/pelican-dev/example@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"); err != nil {
-		t.Fatalf("expected digest image to pass validation: %v", err)
-	}
-
-	if err := validateSecureImageReference("ghcr.io/pelican-dev/example:latest"); err == nil {
-		t.Fatal("expected tag image to fail validation")
 	}
 }

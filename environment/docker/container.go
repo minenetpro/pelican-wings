@@ -360,29 +360,23 @@ func (e *Environment) ensureImageExists(image string) error {
 
 	out, err := e.client.ImagePull(ctx, image, imagePullOptions)
 	if err != nil {
-		images, ierr := e.client.ImageList(ctx, dockerImage.ListOptions{})
+		exists, ierr := ImageExistsLocally(ctx, e.client, image)
 		if ierr != nil {
 			// Well damn, something has gone really wrong here, just go ahead and abort there
 			// isn't much anything we can do to try and self-recover from this.
-			return errors.Wrap(ierr, "environment/docker: failed to list images")
+			return ierr
 		}
 
-		for _, img := range images {
-			for _, t := range img.RepoTags {
-				if t != image {
-					continue
-				}
+		if exists {
+			log.WithFields(log.Fields{
+				"image":        image,
+				"container_id": e.Id,
+				"err":          err.Error(),
+			}).Warn("unable to pull requested image from remote source, however the image exists locally")
 
-				log.WithFields(log.Fields{
-					"image":        image,
-					"container_id": e.Id,
-					"err":          err.Error(),
-				}).Warn("unable to pull requested image from remote source, however the image exists locally")
-
-				// Okay, we found a matching container image, in that case just go ahead and return
-				// from this function, since there is nothing else we need to do here.
-				return nil
-			}
+			// Okay, we found a matching container image, in that case just go ahead and return
+			// from this function, since there is nothing else we need to do here.
+			return nil
 		}
 
 		return errors.Wrapf(err, "environment/docker: failed to pull \"%s\" image for server", image)

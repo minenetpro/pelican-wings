@@ -18,7 +18,7 @@ This repository now enforces the following tenant workload restrictions:
 
 - Tenant containers and installer containers use the configured Docker runtime, which defaults to `runsc`.
 - Tenant containers use read-only root filesystems, `no-new-privileges`, `cap_drop=ALL`, and a private cgroup namespace.
-- Images must be pinned by digest, for example `ghcr.io/example/game@sha256:...`.
+- Tenant images may use tags or digests. Digest pinning is recommended for provenance and reproducibility, but is not required for sandboxing.
 - Custom host mounts are rejected.
 - `force_outgoing_ip` is rejected.
 - Tenant-provided runtime labels are ignored.
@@ -271,7 +271,7 @@ Important deployment notes:
 - Do not run Wings inside Docker for this deployment model.
 - Do not rely on `allowed_mounts` for tenant workloads. Secure mode rejects custom server mounts.
 - Do not use `force_outgoing_ip`.
-- Keep tenant image references pinned by digest.
+- Digest pinning is recommended if you want reproducible image selection, but it is not required by Wings.
 
 ## Step 8: Install the systemd Service
 
@@ -311,7 +311,8 @@ sudo systemctl status wings
 
 Your server definitions must follow the secure runtime rules now enforced by the code:
 
-- Use digest-pinned images only:
+- Use a valid registry image reference:
+  - `ghcr.io/example/server:stable`
   - `ghcr.io/example/server@sha256:...`
 - Do not configure custom server mounts.
 - Do not configure `force_outgoing_ip`.
@@ -376,6 +377,6 @@ That is usually an application compatibility issue with gVisor. Keep the secure 
 - `docker run --runtime=runsc hello-world` succeeds
 - Wings installed on the host, not in Docker
 - `docker.runtime: runsc` set in `/etc/pelican/config.yml`
-- Tenant images pinned by digest
+- Tenant image references reviewed for your own provenance requirements
 - No custom server mounts
 - Wings starts successfully and `wings diagnostics` is clean

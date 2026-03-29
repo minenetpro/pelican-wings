@@ -1853,7 +1853,7 @@ wings --auto-tls --tls-hostname wings.example.com
 - Per-server bridge network isolation
 - Read-only root filesystem and `no-new-privileges`
 - `cap_drop=ALL` for tenant workloads
-- Digest-pinned images only in secure mode
+- Digest pinning recommended for provenance, but not required for secure mode
 - Custom host mounts and `force_outgoing_ip` disabled in secure mode
 
 For the supported secure deployment topology and host installation steps, see:

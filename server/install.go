@@ -238,10 +238,6 @@ func (ip *InstallationProcess) writeScriptToDisk() error {
 
 // Pulls the docker image to be used for the installation container.
 func (ip *InstallationProcess) pullInstallationImage() error {
-	if err := validateSecureImageReference(ip.Script.ContainerImage); err != nil {
-		return err
-	}
-
 	// Get a registry auth configuration from the config.
 	var registryAuth *config.RegistryConfiguration
 	for registry, c := range config.Get().Docker.Registries {
@@ -268,28 +264,22 @@ func (ip *InstallationProcess) pullInstallationImage() error {
 
 	r, err := ip.client.ImagePull(ip.Server.Context(), ip.Script.ContainerImage, imagePullOptions)
 	if err != nil {
-		images, ierr := ip.client.ImageList(ip.Server.Context(), dockerImage.ListOptions{})
+		exists, ierr := dockerenv.ImageExistsLocally(ip.Server.Context(), ip.client, ip.Script.ContainerImage)
 		if ierr != nil {
 			// Well damn, something has gone really wrong here, just go ahead and abort there
 			// isn't much anything we can do to try and self-recover from this.
 			return ierr
 		}
 
-		for _, img := range images {
-			for _, t := range img.RepoTags {
-				if t != ip.Script.ContainerImage {
-					continue
-				}
+		if exists {
+			log.WithFields(log.Fields{
+				"image": ip.Script.ContainerImage,
+				"err":   err.Error(),
+			}).Warn("unable to pull requested image from remote source, however the image exists locally")
 
-				log.WithFields(log.Fields{
-					"image": ip.Script.ContainerImage,
-					"err":   err.Error(),
-				}).Warn("unable to pull requested image from remote source, however the image exists locally")
-
-				// Okay, we found a matching container image, in that case just go ahead and return
-				// from this function, since there is nothing else we need to do here.
-				return nil
-			}
+			// Okay, we found a matching container image, in that case just go ahead and return
+			// from this function, since there is nothing else we need to do here.
+			return nil
 		}
 
 		return err
