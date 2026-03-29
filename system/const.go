@@ -1,3 +1,3 @@
 package system
 
-var Version = "develop"
+var Version = "3.0.0"
