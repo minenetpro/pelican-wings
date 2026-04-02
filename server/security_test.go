@@ -46,6 +46,56 @@ func TestValidateSecureConfiguration(t *testing.T) {
 			}(),
 			wantErr: true,
 		},
+		{
+			name: "accepts none ingress mode",
+			config: func() Configuration {
+				c := secureTestConfig("ghcr.io/pelican-dev/example:latest")
+				c.Ingress = environment.Ingress{Mode: environment.NoIngressMode}
+				return c
+			}(),
+		},
+		{
+			name: "accepts conduit ingress mode with settings",
+			config: func() Configuration {
+				c := secureTestConfig("ghcr.io/pelican-dev/example:latest")
+				c.Ingress = environment.Ingress{
+					Mode: environment.ConduitDedicatedIngressMode,
+					Conduit: &environment.ConduitIngress{
+						ServerAddr: "203.0.113.10",
+						ServerPort: 7000,
+						AuthToken:  "token",
+						PortStart:  1024,
+						PortEnd:    49151,
+					},
+				}
+				return c
+			}(),
+		},
+		{
+			name: "rejects conduit ingress without settings",
+			config: func() Configuration {
+				c := secureTestConfig("ghcr.io/pelican-dev/example:latest")
+				c.Ingress = environment.Ingress{Mode: environment.ConduitDedicatedIngressMode}
+				return c
+			}(),
+			wantErr: true,
+		},
+		{
+			name: "rejects conduit ingress without range",
+			config: func() Configuration {
+				c := secureTestConfig("ghcr.io/pelican-dev/example:latest")
+				c.Ingress = environment.Ingress{
+					Mode: environment.ConduitDedicatedIngressMode,
+					Conduit: &environment.ConduitIngress{
+						ServerAddr: "203.0.113.10",
+						ServerPort: 7000,
+						AuthToken:  "token",
+					},
+				}
+				return c
+			}(),
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {

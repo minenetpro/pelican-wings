@@ -7,6 +7,7 @@ import (
 type Settings struct {
 	Mounts      []Mount
 	Allocations Allocations
+	Ingress     Ingress
 	Limits      Limits
 	Labels      map[string]string
 }
@@ -59,6 +60,13 @@ func (c *Configuration) Allocations() Allocations {
 	defer c.mu.RUnlock()
 
 	return c.settings.Allocations
+}
+
+func (c *Configuration) Ingress() Ingress {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	return c.settings.Ingress
 }
 
 // Returns all of the mounts associated with this environment.

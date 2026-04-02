@@ -226,6 +226,7 @@ func (m *Manager) InitServer(data remote.ServerConfigurationResponse) (*Server, 
 	settings := environment.Settings{
 		Mounts:      s.Mounts(),
 		Allocations: s.cfg.Allocations,
+		Ingress:     s.cfg.Ingress,
 		Limits:      s.cfg.Build,
 		Labels:      map[string]string{},
 	}
@@ -240,6 +241,9 @@ func (m *Manager) InitServer(data remote.ServerConfigurationResponse) (*Server, 
 	} else {
 		s.Environment = env
 		s.StartEventListeners()
+		if err := env.InSituUpdate(); err != nil {
+			s.Log().WithField("error", err).Warn("failed to sync ingress sidecar during server initialization")
+		}
 	}
 
 	// If the server's data directory exists, force disk usage calculation.

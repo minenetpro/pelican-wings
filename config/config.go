@@ -334,6 +334,11 @@ type Token struct {
 	Token string
 }
 
+type ConduitConfiguration struct {
+	FrpcImage string `default:"ghcr.io/fatedier/frpc:v0.65.0" json:"frpc_image" yaml:"frpc_image"`
+	ConfigDirectory string `default:"/var/lib/pelican/conduit" json:"config_directory" yaml:"config_directory"`
+}
+
 type Configuration struct {
 	Token Token `json:"-" yaml:"-"`
 
@@ -390,6 +395,8 @@ type Configuration struct {
 	// is only required by users running Wings without SSL certificates and using internal IP
 	// addresses in order to connect. Most users should NOT enable this setting.
 	AllowCORSPrivateNetwork bool `json:"allow_cors_private_network" yaml:"allow_cors_private_network"`
+
+	Conduit ConduitConfiguration `json:"conduit" yaml:"conduit"`
 
 	Axiom AxiomConfiguration `json:"-" yaml:"axiom"`
 

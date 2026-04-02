@@ -216,12 +216,20 @@ func parseInvocation(invocation string, envvars map[string]interface{}, memory i
 // Returns all of the environment variables that should be assigned to a running
 // server instance.
 func (s *Server) GetEnvironmentVariables() []string {
+	defaultPort := 0
+	defaultIP := ""
+	if s.Config().Allocations.DefaultMapping != nil {
+		defaultPort = s.Config().Allocations.DefaultMapping.Port
+		defaultIP = s.Config().Allocations.DefaultMapping.Ip
+	}
+	serviceIP := s.Config().Ingress.ServiceBindAddress(defaultIP)
+
 	out := []string{
 		fmt.Sprintf("TZ=%s", DetermineServerTimezone(s.Config().EnvVars, config.Get().System.Timezone)),
-		fmt.Sprintf("STARTUP=%s", parseInvocation(s.Config().Invocation, s.Config().EnvVars, s.MemoryLimit(), s.Config().Allocations.DefaultMapping.Port, s.Config().Allocations.DefaultMapping.Ip)),
+		fmt.Sprintf("STARTUP=%s", parseInvocation(s.Config().Invocation, s.Config().EnvVars, s.MemoryLimit(), defaultPort, serviceIP)),
 		fmt.Sprintf("SERVER_MEMORY=%d", s.MemoryLimit()),
-		fmt.Sprintf("SERVER_IP=%s", s.Config().Allocations.DefaultMapping.Ip),
-		fmt.Sprintf("SERVER_PORT=%d", s.Config().Allocations.DefaultMapping.Port),
+		fmt.Sprintf("SERVER_IP=%s", serviceIP),
+		fmt.Sprintf("SERVER_PORT=%d", defaultPort),
 	}
 
 eloop:

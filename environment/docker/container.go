@@ -114,7 +114,7 @@ func (e *Environment) InSituUpdate() error {
 		//
 		// We'll let a boot process make modifications to the container if needed at this point.
 		if client.IsErrNotFound(err) {
-			return nil
+			return e.syncIngressContainer()
 		}
 		return errors.Wrap(err, "environment/docker: could not inspect container")
 	}
@@ -128,7 +128,7 @@ func (e *Environment) InSituUpdate() error {
 	}); err != nil {
 		return errors.Wrap(err, "environment/docker: could not update container")
 	}
-	return nil
+	return e.syncIngressContainer()
 }
 
 // Create creates a new container for the server using all the data that is
@@ -225,12 +225,14 @@ func (e *Environment) Create() error {
 		CgroupnsMode:   container.CgroupnsModePrivate,
 		Runtime:        cfg.Docker.Runtime,
 	}
+	conf.ExposedPorts = nil
+	hostConf.PortBindings = nil
 
 	if _, err := e.client.ContainerCreate(ctx, conf, hostConf, nil, nil, e.Id); err != nil {
 		return errors.Wrap(err, "environment/docker: failed to create container")
 	}
 
-	return nil
+	return e.syncIngressContainer()
 }
 
 // Destroy will remove the Docker container from the server. If the container
@@ -253,6 +255,13 @@ func (e *Environment) Destroy() error {
 	// Preserve the legacy mount ordering for container startup compatibility.
 	if err != nil && client.IsErrNotFound(err) {
 		err = nil
+	}
+
+	if nerr := e.removeIngressContainer(); nerr != nil {
+		if err == nil {
+			return nerr
+		}
+		e.log().WithField("error", nerr).Warn("failed to remove ingress sidecar after container removal")
 	}
 
 	if nerr := RemoveSecureNetwork(context.Background(), e.client, e.Id); nerr != nil {
