@@ -268,6 +268,33 @@ Important deployment notes:
 - Do not use `force_outgoing_ip`.
 - Digest pinning is recommended if you want reproducible image selection, but it is not required by Wings.
 
+Optional dedicated Conduit ingress:
+
+```yaml
+conduit:
+  frpc_image: ghcr.io/fatedier/frpc:v0.65.0
+  config_directory: /var/lib/pelican/conduit
+```
+
+Server definitions can then request a dedicated Conduit sidecar with:
+
+```json
+{
+  "ingress": {
+    "mode": "conduit_dedicated",
+    "conduit": {
+      "server_addr": "203.0.113.10",
+      "server_port": 7000,
+      "auth_token": "replace-me",
+      "port_start": 25565,
+      "port_end": 25570
+    }
+  }
+}
+```
+
+Dedicated Conduit ingress uses the same secure runtime and per-server private network as the tenant workload. A valid inclusive `port_start` to `port_end` range is required.
+
 ## Step 8: Install the systemd Service
 
 Create `/etc/systemd/system/wings.service`:

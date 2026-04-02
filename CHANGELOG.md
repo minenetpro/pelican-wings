@@ -1,5 +1,13 @@
 # Changelog
 
+## v3.1.0 - 2026-04-02
+### Added
+* Secure local-control servers can now use `ingress.mode: conduit_dedicated` to launch a dedicated `frpc` sidecar on the server's private network and proxy an explicit TCP port range through Conduit.
+* Added node-wide `conduit.frpc_image` and `conduit.config_directory` settings so operators can control the FRP client image and where generated per-server client configs are stored.
+
+### Changed
+* Secure server validation now accepts only supported ingress modes and requires Conduit connection details plus a valid `port_start` to `port_end` range when dedicated Conduit ingress is enabled.
+
 ## v3.0.2 - 2026-03-30
 ### Fixed
 * Installer script staging now keeps secure owner-only permissions when Wings can assign ownership, but falls back to readable permissions instead of aborting installs on unprivileged or containerized deployments where `chown()` is unavailable.

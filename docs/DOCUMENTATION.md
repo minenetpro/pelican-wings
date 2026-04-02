@@ -1590,6 +1590,30 @@ type AllocationMapping struct {
 }
 ```
 
+### Ingress
+
+```go
+type Ingress struct {
+    Mode    string
+    Conduit *ConduitIngress
+}
+
+type ConduitIngress struct {
+    ServerAddr string
+    ServerPort int
+    AuthToken  string
+    PortStart  int
+    PortEnd    int
+}
+```
+
+Supported ingress modes:
+
+- `none`: no dedicated ingress sidecar is created.
+- `conduit_dedicated`: Wings starts a dedicated `frpc` sidecar on the server's private network and proxies each TCP port from `port_start` through `port_end`.
+
+When `mode` is `conduit_dedicated`, `server_addr`, `server_port`, `auth_token`, `port_start`, and `port_end` are required.
+
 ### Backup
 
 ```go
@@ -2011,6 +2035,11 @@ block_base_dir_mount: true
 allowed_origins: []
 allow_cors_private_network: false
 
+# Conduit ingress sidecar configuration
+conduit:
+  frpc_image: ghcr.io/fatedier/frpc:v0.65.0
+  config_directory: /var/lib/pelican/conduit
+
 # Ignore Panel config updates
 ignore_panel_config_updates: false
 
@@ -2191,6 +2220,37 @@ transfer status:<server-uuid>
 ---
 
 ## Integrations
+
+### Conduit (Dedicated TCP Ingress)
+
+Wings can launch a dedicated `frpc` sidecar for a server when the server configuration sets `ingress.mode` to `conduit_dedicated`. The sidecar runs with the configured Docker runtime, joins the server's private network, and proxies every TCP port in the configured range.
+
+**Node Configuration:**
+
+```yaml
+conduit:
+  frpc_image: ghcr.io/fatedier/frpc:v0.65.0
+  config_directory: /var/lib/pelican/conduit
+```
+
+**Per-Server Configuration:**
+
+```json
+{
+  "ingress": {
+    "mode": "conduit_dedicated",
+    "conduit": {
+      "server_addr": "203.0.113.10",
+      "server_port": 7000,
+      "auth_token": "replace-me",
+      "port_start": 25565,
+      "port_end": 25570
+    }
+  }
+}
+```
+
+The dedicated Conduit mode requires `server_addr`, `server_port`, `auth_token`, and a valid inclusive `port_start` to `port_end` range.
 
 ### Axiom (Observability)
 
